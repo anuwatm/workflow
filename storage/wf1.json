@@ -1,0 +1,46 @@
+{
+  "nodes": [
+    {
+      "id": "node-1770704013587-760",
+      "type": "StartFlow",
+      "x": 647,
+      "y": 179,
+      "widgets_values": {
+        "flow_name": "New Workflow"
+      }
+    },
+    {
+      "id": "node-1770704013588-336",
+      "type": "EndFlow",
+      "x": 1554,
+      "y": 476,
+      "widgets_values": {
+        "status": "Completed"
+      }
+    },
+    {
+      "id": "node-1770704019790-302",
+      "type": "OfficerReview",
+      "x": 993,
+      "y": 241,
+      "widgets_values": {
+        "role": "Admin",
+        "instructions": "Verify documents complete"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "output_node_id": "node-1770704013587-760",
+      "output_name": "start",
+      "input_node_id": "node-1770704019790-302",
+      "input_name": "EXEC"
+    },
+    {
+      "output_node_id": "node-1770704019790-302",
+      "output_name": "PASSED",
+      "input_node_id": "node-1770704013588-336",
+      "input_name": "EXEC"
+    }
+  ]
+}
