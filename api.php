@@ -1,9 +1,10 @@
 <?php
+session_start();
 header('Content-Type: application/json');
 
 function getDB()
 {
-    $dbPath = __DIR__ . '/database/workflow.sqlite';
+    $dbPath = 'c:/LocalDevine/www/workflow/database/workflow.sqlite';
     if (!file_exists($dbPath)) {
         http_response_code(500);
         die(json_encode(['error' => 'Database not found. Please run init_db.php first.']));
@@ -20,7 +21,110 @@ function getDB()
 
 $action = $_GET['action'] ?? '';
 
-if ($action === 'save') {
+
+if ($action === 'register') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $empId = $data['emp_id'] ?? '';
+    $username = $data['username'] ?? '';
+    $password = $data['password'] ?? '';
+    $email = $data['email'] ?? '';
+    $positionId = $data['position_id'] ?? null;
+    $deptId = $data['dept_id'] ?? null;
+
+    if (empty($empId) || empty($username) || empty($password) || empty($email)) {
+        echo json_encode(['success' => false, 'error' => 'All fields are required']);
+        exit;
+    }
+
+    try {
+        $pdo = getDB();
+
+        // Check if username or ID exists
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE username = :username OR id = :id");
+        $stmt->execute([':username' => $username, ':id' => $empId]);
+        if ($stmt->fetch()) {
+            echo json_encode(['success' => false, 'error' => 'Username or Emp ID already exists']);
+            exit;
+        }
+
+        // Hash password
+        $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+
+        // Insert user with new fields
+        $sql = "INSERT INTO users (id, username, email, password_hash, position_id, dept_id) 
+                VALUES (:id, :username, :email, :password, :pos, :dept)";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ':id' => $empId,
+            ':username' => $username,
+            ':email' => $email,
+            ':password' => $hashedPassword,
+            ':pos' => $positionId,
+            ':dept' => $deptId
+        ]);
+
+        echo json_encode(['success' => true, 'message' => 'Registration successful']);
+    } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
+    }
+
+} elseif ($action === 'get_meta_data') {
+    try {
+        $pdo = getDB();
+        $positions = $pdo->query("SELECT id, name FROM positions")->fetchAll(PDO::FETCH_ASSOC);
+        $departments = $pdo->query("SELECT id, name FROM departments")->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['positions' => $positions, 'departments' => $departments]);
+    } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+} elseif ($action === 'login') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $username = $data['username'] ?? '';
+    $password = $data['password'] ?? '';
+
+    if (empty($username) || empty($password)) {
+        echo json_encode(['success' => false, 'error' => 'Username and password are required']);
+        exit;
+    }
+
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("SELECT id, username, password_hash FROM users WHERE username = :username");
+        $stmt->execute([':username' => $username]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($user && password_verify($password, $user['password_hash'])) {
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            echo json_encode(['success' => true, 'message' => 'Login successful']);
+        } else {
+            echo json_encode(['success' => false, 'error' => 'Invalid username or password']);
+        }
+    } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
+    }
+
+} elseif ($action === 'logout') {
+    session_destroy();
+    echo json_encode(['success' => true, 'message' => 'Logged out']);
+
+} elseif ($action === 'check_auth') {
+    if (isset($_SESSION['user_id'])) {
+        echo json_encode(['authenticated' => true, 'username' => $_SESSION['username']]);
+    } else {
+        echo json_encode(['authenticated' => false]);
+    }
+
+} elseif ($action === 'save') {
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Unauthorized']);
+        exit;
+    }
+
     $data = file_get_contents('php://input'); // This acts as structure_json
     $currentName = 'Untitled Workflow';
     $description = $_GET['description'] ?? '';
@@ -54,17 +158,28 @@ if ($action === 'save') {
             echo json_encode(['success' => true, 'message' => 'Workflow updated', 'id' => $existing['id'], 'filename' => $currentName]);
         } else {
             // Insert new record
-            $stmt = $pdo->prepare("INSERT INTO workflow_definitions (name, description, workflow_file) VALUES (:name, :desc, :filename)");
-            $stmt->execute([':name' => $currentName, ':desc' => $description, ':filename' => $safeFilename]);
+            $stmt = $pdo->prepare("INSERT INTO workflow_definitions (name, description, workflow_file, creator_name) VALUES (:name, :desc, :filename, :creator)");
+            $stmt->execute([
+                ':name' => $currentName,
+                ':desc' => $description,
+                ':filename' => $safeFilename,
+                ':creator' => $_SESSION['username']
+            ]);
             echo json_encode(['success' => true, 'message' => 'Workflow created', 'id' => $pdo->lastInsertId(), 'filename' => $currentName]);
         }
 
     } catch (Exception $e) {
         http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'error' => 'e: ' . $e->getMessage()]);
     }
 
 } elseif ($action === 'list') {
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Unauthorized']);
+        exit;
+    }
+
     try {
         $pdo = getDB();
         // Return detailed list
@@ -78,6 +193,12 @@ if ($action === 'save') {
     }
 
 } elseif ($action === 'load') {
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Unauthorized']);
+        exit;
+    }
+
     $name = $_GET['file'] ?? '';
 
     try {
@@ -122,6 +243,12 @@ if ($action === 'save') {
     }
 
 } elseif ($action === 'upload') {
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Unauthorized']);
+        exit;
+    }
+
     if (isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK) {
         $uploadDir = __DIR__ . '/docFlow';
         if (!file_exists($uploadDir)) {
@@ -141,6 +268,41 @@ if ($action === 'save') {
     } else {
         http_response_code(400);
         echo json_encode(['success' => false, 'error' => 'No file uploaded or upload error']);
+    }
+} elseif ($action === 'run') {
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Unauthorized']);
+        exit;
+    }
+
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['workflow_json'])) {
+        echo json_encode(['success' => false, 'error' => 'No workflow data provided']);
+        exit;
+    }
+
+    $json = $data['workflow_json'];
+    $workflowName = $data['name'] ?? 'Untitled Execution';
+
+    try {
+        require_once 'WorkflowEngine.php';
+        $pdo = getDB();
+
+        // Create Instance Record
+        $stmt = $pdo->prepare("INSERT INTO workflow_instances (workflow_name, status, data) VALUES (?, 'PENDING', ?)");
+        $stmt->execute([$workflowName, $json]);
+        $instanceId = $pdo->lastInsertId();
+
+        // Execution
+        $engine = new WorkflowEngine($pdo, $instanceId);
+        $engine->start($json);
+
+        echo json_encode(['success' => true, 'message' => 'Workflow executed successfully', 'instance_id' => $instanceId]);
+
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Execution Error: ' . $e->getMessage()]);
     }
 } else {
     echo json_encode(['error' => 'Invalid action']);

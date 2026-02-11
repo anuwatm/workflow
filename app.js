@@ -3,33 +3,29 @@ const NodeRegistry = {
     'StartFlow': {
         title: 'Start Flow',
         category: 'start-end',
-        outputs: [{ name: 'start', type: 'FLOW' }, { name: 'cancel', type: 'FLOW' }],
-        widgets: [
-            { type: 'text', name: 'flow_name', value: 'New Workflow' }
-        ]
+        outputs: [{ name: 'start', type: 'FLOW' }],
+        widgets: []
     },
     'OfficerReview': {
-        title: 'Officer Review',
+        title: 'Review',
         category: 'human',
-        inputs: [{ name: 'EXEC', type: 'FLOW' }, { name: 'DATA', type: 'DATA' }],
+        inputs: [{ name: 'INPUT', type: 'FLOW' }],
         outputs: [
             { name: 'PASSED', type: 'FLOW' },
-            { name: 'REJECTED', type: 'FLOW' },
-            { name: 'DATA', type: 'DATA' }
+            { name: 'REJECTED', type: 'FLOW' }
         ],
         widgets: [
-            { type: 'select', name: 'role', options: ['Admin', 'HR Officer', 'Finance Officer'] },
-            { type: 'text', name: 'instructions', value: 'Verify documents complete' }
+            { type: 'select', name: 'Review', options: [] }, // Options populated dynamically
+            { type: 'text', name: 'remark', value: '' }
         ]
     },
     'ManagerApproval': {
-        title: 'Manager Approval',
+        title: 'Approval',
         category: 'human',
-        inputs: [{ name: 'EXEC', type: 'FLOW' }, { name: 'DATA', type: 'DATA' }],
+        inputs: [{ name: 'INPUT', type: 'FLOW' }],
         outputs: [
             { name: 'APPROVED', type: 'FLOW' },
-            { name: 'DENIED', type: 'FLOW' },
-            { name: 'DATA', type: 'DATA' }
+            { name: 'DENIED', type: 'FLOW' }
         ],
         widgets: [
             { type: 'select', name: 'level', options: ['Supervisor', 'Manager', 'Director'] },
@@ -63,7 +59,7 @@ const NodeRegistry = {
     'EndFlow': {
         title: 'End Flow',
         category: 'start-end',
-        inputs: [{ name: 'EXEC', type: 'FLOW' }, { name: 'DATA', type: 'DATA' }],
+        inputs: [{ name: 'INPUT', type: 'FLOW' }],
         widgets: [
             { type: 'select', name: 'status', options: ['Completed', 'Terminated', 'Archived'] }
         ]
@@ -102,7 +98,8 @@ class App {
         this.init();
     }
 
-    init() {
+    async init() {
+        await this.fetchMetaData();
         this.setupEventListeners();
         // Add specific event listener for delete key
         window.addEventListener('keydown', (e) => {
@@ -298,6 +295,9 @@ class App {
             });
         }
 
+        const btnRun = document.getElementById('btn-run');
+        if (btnRun) btnRun.addEventListener('click', () => this.runWorkflow());
+
         const btnSave = document.getElementById('btn-save');
         if (btnSave) btnSave.addEventListener('click', () => this.saveWorkflow());
 
@@ -306,6 +306,26 @@ class App {
 
         const btnClear = document.getElementById('btn-clear');
         if (btnClear) btnClear.addEventListener('click', () => this.clear());
+    }
+
+    async fetchMetaData() {
+        try {
+            const response = await fetch('api.php?action=get_meta_data');
+            const data = await response.json();
+            if (data.positions) {
+                // Update NodeRegistry directly for OfficerReview
+                if (NodeRegistry['OfficerReview']) {
+                    const reviewWidget = NodeRegistry['OfficerReview'].widgets.find(w => w.name === 'Review');
+                    if (reviewWidget) {
+                        // We want names for the dropdown
+                        reviewWidget.options = data.positions.map(p => p.name);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Failed to fetch metadata:', error);
+            this.showNotification('Failed to load workflow data', 'error');
+        }
     }
 
     updateTransform() {
@@ -438,9 +458,9 @@ class App {
         // Check for duplicates
         const exists = this.connections.some(c =>
             c.output.nodeId === outputSock.nodeId &&
-            c.output.socketName === outputSock.dataset.name &&
+            c.output.socketName === outputSock.socketName &&
             c.input.nodeId === inputSock.nodeId &&
-            c.input.socketName === inputSock.dataset.name
+            c.input.socketName === inputSock.socketName
         );
 
         if (exists) {
@@ -600,6 +620,38 @@ class App {
         };
 
         cancelBtn.onclick = close;
+    }
+
+    async runWorkflow() {
+        const json = this.serialize();
+        const name = this.currentMeta.name || 'Untitled Execution';
+
+        this.showNotification('Starting workflow execution...', 'info');
+
+        try {
+            const response = await fetch('api.php?action=run', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    workflow_json: json,
+                    name: name
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showNotification('Workflow Executed! Instance ID: ' + result.instance_id, 'success');
+                console.log('Execution Result:', result);
+            } else {
+                this.showNotification('Execution Failed: ' + result.error, 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            this.showNotification('Failed to execute workflow.', 'error');
+        }
     }
 
     async loadWorkflow() {
@@ -1012,7 +1064,7 @@ class Node {
 
         div.prepend(socket);
         this.inputsContainer.appendChild(div);
-        this.inputs.push({ name, type, element: socket });
+        this.inputs.push({ nodeId: this.id, socketName: name, name, type, element: socket });
     }
 
     addOutput(name, type) {
@@ -1035,7 +1087,7 @@ class Node {
 
         div.append(socket);
         this.outputsContainer.appendChild(div);
-        this.outputs.push({ name, type, element: socket });
+        this.outputs.push({ nodeId: this.id, socketName: name, name, type, element: socket });
     }
 
     addWidget(widgetDef) {

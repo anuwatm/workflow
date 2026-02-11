@@ -1,3 +1,10 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id'])) {
+    header("Location: index.php");
+    exit;
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -80,7 +87,9 @@
             </div>
             <div id="main-menu" class="floating-panel">
                 <div class="menu-buttons">
-                    <button id="btn-start-flow">Start Flow</button>
+                    <button id="btn-logout" style="background:#dc3545;color:white;">Logout</button>
+                    <button id="btn-run" style="background:#17a2b8;color:white;">Run Workflow</button>
+                    <button id="btn-start-flow">Reset Flow</button>
                     <button id="btn-save">Save Workflow</button>
                     <button id="btn-load">Load Workflow</button>
                     <button id="btn-clear">Clear</button>
