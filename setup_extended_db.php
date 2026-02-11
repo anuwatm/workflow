@@ -78,6 +78,36 @@ try {
         echo "Users table already appears to have new schema.\n";
     }
 
+    // 4. Create Documents Table
+    $pdo->exec("CREATE TABLE IF NOT EXISTS documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_no TEXT UNIQUE,
+        title TEXT,
+        amount DECIMAL(10,2),
+        dept_id INTEGER,
+        requester_id INTEGER,
+        workflow_id INTEGER,
+        current_node TEXT,
+        status TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        dateprefix TEXT,
+        FOREIGN KEY(dept_id) REFERENCES departments(id),
+        FOREIGN KEY(requester_id) REFERENCES users(id),
+        FOREIGN KEY(workflow_id) REFERENCES workflow_definitions(id)
+    )");
+    echo "Documents table created.\n";
+
+    // 5. Create Document Files Table
+    $pdo->exec("CREATE TABLE IF NOT EXISTS document_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id INTEGER,
+        filename TEXT,
+        file_path TEXT,
+        uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(document_id) REFERENCES documents(id)
+    )");
+    echo "Document Files table created.\n";
+
     echo "Database setup complete.\n";
 
 } catch (PDOException $e) {

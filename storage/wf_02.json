@@ -1,0 +1,81 @@
+{
+  "nodes": [
+    {
+      "id": "node-1770806533022-550",
+      "type": "StartFlow",
+      "x": 695,
+      "y": 141,
+      "widgets_values": {}
+    },
+    {
+      "id": "node-1770806533022-633",
+      "type": "EndFlow",
+      "x": 1744,
+      "y": 339,
+      "widgets_values": {
+        "status": "Completed"
+      }
+    },
+    {
+      "id": "node-1770806540777-457",
+      "type": "OfficerReview",
+      "x": 961,
+      "y": 222,
+      "widgets_values": {
+        "Review": "Officer",
+        "remark": ""
+      }
+    },
+    {
+      "id": "node-1770806558583-565",
+      "type": "ManagerApproval",
+      "x": 1404,
+      "y": 164,
+      "widgets_values": {
+        "level": "Manager",
+        "threshold": "5000"
+      }
+    },
+    {
+      "id": "node-1770806605352-575",
+      "type": "EndFlow",
+      "x": 1733,
+      "y": 610,
+      "widgets_values": {
+        "status": "Terminated"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "output_node_id": "node-1770806533022-550",
+      "output_name": "start",
+      "input_node_id": "node-1770806540777-457",
+      "input_name": "INPUT"
+    },
+    {
+      "output_node_id": "node-1770806540777-457",
+      "output_name": "PASSED",
+      "input_node_id": "node-1770806558583-565",
+      "input_name": "INPUT"
+    },
+    {
+      "output_node_id": "node-1770806558583-565",
+      "output_name": "APPROVED",
+      "input_node_id": "node-1770806533022-633",
+      "input_name": "INPUT"
+    },
+    {
+      "output_node_id": "node-1770806558583-565",
+      "output_name": "DENIED",
+      "input_node_id": "node-1770806605352-575",
+      "input_name": "INPUT"
+    },
+    {
+      "output_node_id": "node-1770806540777-457",
+      "output_name": "REJECTED",
+      "input_node_id": "node-1770806605352-575",
+      "input_name": "INPUT"
+    }
+  ]
+}

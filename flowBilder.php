@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ComfyUI Clone</title>
+    <title>WorkFlow Builder</title>
     <link rel="stylesheet" href="style.css">
     <style>
         /* Embed SVG definitions if needed */
@@ -92,6 +92,8 @@ if (!isset($_SESSION['user_id'])) {
                     <button id="btn-start-flow">Reset Flow</button>
                     <button id="btn-save">Save Workflow</button>
                     <button id="btn-load">Load Workflow</button>
+                    <button id="btn-review" style="background:#6f42c1;color:white;"
+                        onclick="location.href='review.php'">Review Workflow</button>
                     <button id="btn-clear">Clear</button>
                 </div>
                 <div id="workflow-info-panel" class="workflow-info-panel" style="display:none;">

@@ -5,15 +5,13 @@
       "type": "StartFlow",
       "x": 423,
       "y": 117,
-      "widgets_values": {
-        "flow_name": "New Workflow"
-      }
+      "widgets_values": {}
     },
     {
       "id": "node-1770720611809-517",
       "type": "EndFlow",
-      "x": 1218,
-      "y": 140,
+      "x": 1281,
+      "y": 147,
       "widgets_values": {
         "status": "Completed"
       }
@@ -21,18 +19,18 @@
     {
       "id": "node-1770720652231-315",
       "type": "OfficerReview",
-      "x": 826,
-      "y": 109,
+      "x": 820,
+      "y": 135,
       "widgets_values": {
-        "role": "HR Officer",
-        "instructions": "Verify documents complete"
+        "Review": "Officer",
+        "remark": ""
       }
     },
     {
-      "id": "node-1770720668386-361",
+      "id": "node-1770799167642-109",
       "type": "EndFlow",
-      "x": 1206,
-      "y": 391,
+      "x": 1162,
+      "y": 516,
       "widgets_values": {
         "status": "Terminated"
       }
@@ -43,19 +41,19 @@
       "output_node_id": "node-1770720611808-236",
       "output_name": "start",
       "input_node_id": "node-1770720652231-315",
-      "input_name": "EXEC"
+      "input_name": "INPUT"
     },
     {
       "output_node_id": "node-1770720652231-315",
       "output_name": "PASSED",
       "input_node_id": "node-1770720611809-517",
-      "input_name": "EXEC"
+      "input_name": "INPUT"
     },
     {
       "output_node_id": "node-1770720652231-315",
       "output_name": "REJECTED",
-      "input_node_id": "node-1770720668386-361",
-      "input_name": "EXEC"
+      "input_node_id": "node-1770799167642-109",
+      "input_name": "INPUT"
     }
   ]
 }

@@ -304,6 +304,152 @@ if ($action === 'register') {
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Execution Error: ' . $e->getMessage()]);
     }
+
+} elseif ($action === 'get_user_details') {
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Unauthorized']);
+        exit;
+    }
+
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("
+            SELECT u.username, p.name as position, d.name as department 
+            FROM users u
+            LEFT JOIN positions p ON u.position_id = p.id
+            LEFT JOIN departments d ON u.dept_id = d.id
+            WHERE u.id = ?
+        ");
+        $stmt->execute([$_SESSION['user_id']]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($user) {
+            echo json_encode(['success' => true, 'username' => $user['username'], 'position' => $user['position'], 'department' => $user['department']]);
+        } else {
+            echo json_encode(['success' => false, 'error' => 'User details not found']);
+        }
+    } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+
+} elseif ($action === 'start_document') {
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Unauthorized']);
+        exit;
+    }
+
+    // Handle Multipart Form Data
+    $title = $_POST['title'] ?? '';
+    $amount = $_POST['amount'] ?? 0;
+    $deptId = $_POST['dept_id'] ?? null;
+    $workflowId = $_POST['workflow_id'] ?? null;
+
+    if (empty($title) || empty($amount) || empty($deptId) || empty($workflowId)) {
+        echo json_encode(['success' => false, 'error' => 'Missing required fields']);
+        exit;
+    }
+
+    try {
+        $pdo = getDB();
+
+        // 1. Generate Doc No
+        $datePrefix = date('Ymd');
+        $stmt = $pdo->prepare("SELECT doc_no FROM documents WHERE dateprefix = ? ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$datePrefix]);
+        $lastDoc = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $runningNo = 1;
+        if ($lastDoc) {
+            // Extract running number (last 4 digits)
+            $lastRunning = (int) substr($lastDoc['doc_no'], -4);
+            $runningNo = $lastRunning + 1;
+        }
+        $docNo = $datePrefix . str_pad($runningNo, 4, '0', STR_PAD_LEFT);
+
+        // 2. Parse Workflow for Next Node
+        // Get Workflow File
+        $stmt = $pdo->prepare("SELECT workflow_file FROM workflow_definitions WHERE id = ?");
+        $stmt->execute([$workflowId]);
+        $wfDef = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $nextNodeId = 'Unknown';
+        $status = 'START';
+
+        if ($wfDef) {
+            $filePath = __DIR__ . '/storage/' . $wfDef['workflow_file'];
+            if (file_exists($filePath)) {
+                $json = json_decode(file_get_contents($filePath), true);
+                // Find Start Node
+                $nodes = $json['nodes'] ?? [];
+                $connections = $json['connections'] ?? [];
+
+                $startNode = null;
+                foreach ($nodes as $n) {
+                    if ($n['type'] === 'StartFlow') {
+                        $startNode = $n;
+                        break;
+                    }
+                }
+
+                if ($startNode) {
+                    // Find Connection from Start
+                    foreach ($connections as $c) {
+                        if ($c['output_node_id'] === $startNode['id']) {
+                            $nextNodeId = $c['input_node_id'];
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Insert Document
+        $stmt = $pdo->prepare("INSERT INTO documents (doc_no, title, amount, dept_id, requester_id, workflow_id, current_node, status, dateprefix) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$docNo, $title, $amount, $deptId, $_SESSION['user_id'], $workflowId, $nextNodeId, $status, $datePrefix]);
+        $docId = $pdo->lastInsertId();
+
+        // 4. Handle Files
+        if (isset($_FILES['files'])) {
+            // Create Folder specific to Document ID
+            $docDir = __DIR__ . '/docFlow/' . $docNo . '/';
+            if (!file_exists($docDir)) {
+                if (!mkdir($docDir, 0777, true)) {
+                    throw new Exception("Failed to create document directory: $docNo");
+                }
+            }
+
+            // Standardize $_FILES Structure
+            $files = $_FILES['files'];
+            // Loop through files
+            if (is_array($files['name'])) {
+                $count = count($files['name']);
+                for ($i = 0; $i < $count; $i++) {
+                    if ($files['error'][$i] === UPLOAD_ERR_OK) {
+                        $tmpName = $files['tmp_name'][$i];
+                        $origName = basename($files['name'][$i]);
+                        $safeName = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $origName);
+                        $target = $docDir . $safeName;
+
+                        if (move_uploaded_file($tmpName, $target)) {
+                            // Store relative path (e.g., 202602110001/my_file.pdf)
+                            $relativePath = $docNo . '/' . $safeName;
+                            $stmt = $pdo->prepare("INSERT INTO document_files (document_id, filename, file_path) VALUES (?, ?, ?)");
+                            $stmt->execute([$docId, $origName, $relativePath]);
+                        }
+                    }
+                }
+            }
+        }
+
+        echo json_encode(['success' => true, 'doc_id' => $docId, 'doc_no' => $docNo]);
+
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
 } else {
     echo json_encode(['error' => 'Invalid action']);
 }
