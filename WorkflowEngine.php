@@ -7,6 +7,8 @@ class WorkflowEngine
     private $instanceId;
     private $workflowData;
     private $nodesMap = [];
+    private $executionCount = 0;
+    private $maxExecutions = 100;
 
     public function __construct($pdo, $instanceId)
     {
@@ -39,12 +41,20 @@ class WorkflowEngine
             throw new Exception("No StartFlow node found.");
         }
 
+        $this->executionCount = 0;
         $this->log($startNode['id'], "Workflow Started", "INFO");
         $this->executeNode($startNode);
     }
 
     private function executeNode($node)
     {
+        if ($this->executionCount > $this->maxExecutions) {
+            $this->log($node['id'], "Execution Terminated (Infinite Loop Detected)", "ERROR");
+            $this->updateInstanceStatus("ERROR", $node['id']);
+            throw new Exception("Infinite loop detected: Maximum execution limit reached.");
+        }
+        $this->executionCount++;
+
         $this->updateInstanceStatus("RUNNING", $node['id']);
         $this->log($node['id'], "Executing Node: " . $node['type'], "INFO");
 
@@ -68,20 +78,67 @@ class WorkflowEngine
             return;
         }
 
-        // Handle Branding (Condition)
+        // Handle Branching (Condition)
         if ($node['type'] === 'Condition') {
-            // Mock Evaluation: Randomly pick TRUE or FALSE for now
-            // In real app, check data
-            $result = (rand(0, 1) === 1);
-            $path = $result ? 'TRUE' : 'FALSE';
-            $this->log($node['id'], "Condition Evaluated: $path", "INFO");
+            // Real Evaluation: Check data against document
+            $field = $node['widgets_values']['field'] ?? '';
+            $operator = $node['widgets_values']['operator'] ?? '=';
+            $value = $node['widgets_values']['value'] ?? '';
 
+            // Get Document Data (Explicit relation via metadata or workflow instances tracking)
+            // Fix: Re-wrote query to prevent full scans or incorrect OR statements
+            $stmt = $this->pdo->prepare("SELECT d.* FROM documents d WHERE d.doc_id IN (SELECT document_id FROM workflow_logs WHERE node_id = 'StartFlow' AND instance_id = ?)");
+            // Note: Since instance schema lacks direct document relation in the provided snippet, an alternative is joining by workflow logs if we had mapped them.
+            // A more direct fix based on the current schema context:
+            $stmt = $this->pdo->prepare("
+                SELECT d.* 
+                FROM documents d 
+                JOIN workflow_instances w ON d.workflow_id = w.workflow_name 
+                WHERE w.id = ? 
+                LIMIT 1
+            ");
+            $stmt->execute([$this->instanceId]);
+            $document = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $result = false;
+            if ($document) {
+                $docValue = 0;
+                if (strtolower($field) === 'amount') {
+                    $docValue = (float) $document['doc_amount']; // FIXED: 'amount' -> 'doc_amount' to match schema
+                } else if (strtolower($field) === 'department' && isset($document['dept_id'])) {
+                    $docValue = $document['dept_id'];
+                }
+
+                $targetValue = (float) $value;
+
+                switch ($operator) {
+                    case '>': $result = ($docValue > $targetValue); break;
+                    case '<': $result = ($docValue < $targetValue); break;
+                    case '=': $result = ($docValue == $targetValue); break;
+                    case '!=': $result = ($docValue != $targetValue); break;
+                    case '>=': $result = ($docValue >= $targetValue); break;
+                    case '<=': $result = ($docValue <= $targetValue); break;
+                    default: $result = false;
+                }
+            } else {
+                 $this->log($node['id'], "Condition Failed: Document not found for evaluation", "ERROR");
+            }
+
+            $path = $result ? 'TRUE' : 'FALSE';
+            $this->log($node['id'], "Condition Evaluated -> Field: $field, Operator: $operator, Target: $value | Result: $path", "INFO");
+
+            $pathTaken = false;
             foreach ($nextNodes as $conn) {
                 if ($conn['source_socket'] === $path) {
                     $this->executeNode($this->nodesMap[$conn['target_node']]);
+                    $pathTaken = true;
                     return; // Take only one path
                 }
             }
+            if (!$pathTaken) {
+                 $this->log($node['id'], "No route found for condition result: $path", "WARNING");
+            }
+            return;
         }
 
         // Default: Execute all next nodes (Parallel)

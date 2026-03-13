@@ -1,75 +1,85 @@
-# Workflow Builder
+# Workflow Builder & Document Management System
 
-A web-based visual workflow editor inspired by ComfyUI, built with vanilla JavaScript, CSS, and PHP. This project allows users to create, save, load, and execute node-based workflows with a modern, dark-themed interface.
+A web-based visual workflow editor and document management system inspired by ComfyUI. Built with vanilla JavaScript, CSS, and PHP. This project allows users to create visual workflows, track documents, manage delegations, and analyze system performance.
 
 ## Features
 
-### Visual Node Editor
+### Visual Node Editor (`flowBilder.php`)
 - **Drag and Drop:** Intuitive canvas for arranging nodes.
 - **Connections:** Link nodes via Input/Output sockets to define flow logic.
+- **Dynamic Logic:** True/False conditions are dynamically evaluated against real document variables (e.g., amount, department).
 - **Navigation:** Zoom and Pan support for large workflows.
-- **Context Menu:** Right-click to add new nodes.
+- **Workflow Management:** Save/Load workflows with metadata (Owner, Date, Description).
+- **Execution Engine:** Robust PHP backend with Infinite Loop protection for safely running workflows.
 
-### Workflow Management
-- **Save/Load:** Persist workflows to the server (JSON storage) with metadata (Owner, Date, Description).
-- **Listing:** Browse saved workflows with detailed previews in the main menu.
-- **Review:** Visualize workflows in a simplified linear "Stepper" view for easier review of the process flow.
-- **Clear:** Reset the canvas instantly.
+### Document Management
+- **New Document Flow (`docFlow.php`)**:
+  - Modern glassmorphism UI for initiating document requests.
+  - Features real-time **Timeline Preview** of the selected workflow.
+  - Supports multi-file attachments via drag-and-drop.
+  
+- **Document Tracker (`tracker.php`)**:
+  - **Dashboard**: "My Requests" dashboard with status cards (Total, Pending, Completed, Rejected).
+  - **Status Badge**: Visual indicators for document status.
+  - **Delegation Management**: Temporarily assign your document approval authority to a colleague directly from the UI.
+  - **History**: Track every document submitted by the user.
 
-### Document Creation & Tracking (New!)
-- **Document Flow:** Create new documents linked to workflows with a modern, glassmorphism UI.
-- **Visual Preview:** See the approval timeline before submitting.
-- **File Attachments:** Drag & drop file uploads stored in dedicated document folders.
-- **Tracking:** Monitor document status (Start, Pending, Approved) via a unique Document ID.
+- **Inbox (`inbox.php`)**:
+  - **Pending Approvals**: View documents awaiting your action based on role/position.
+  - **Department-Aware Routing**: Managers will only see documents routed from their own department.
+  - **Virtual Profiles**: Seamlessly handles documents routed to you via active Delegation rules without manual login swapping.
+  - **Action Controls**: Approve or Reject documents with remarks to progress workflow.
 
-### User System (New!)
-- **Registration:**
-  - Extended fields: Employee ID (`empID`), Username, Email, Password.
-  - **Role Management:** Select Position and Department during registration (dynamically populated from database).
-- **Authentication:** Secure login system with password hashing.
+- **Workflow Review (`review.php`)**:
+  - Read-only "Stepper" view to visualize saved workflows purely as a linear process for easier understanding.
 
-### Workflow Execution (Backend)
-- **Execution Engine:** PHP-based engine to traverse and execute workflow graphs.
-- **Instance Tracking:** Database records for every workflow run (Status, Current Node, Logs).
-- **(In Progress):** Logic for pausing execution at Human Tasks (Review/Approval).
+### Security & Transparency
+- **Action History (Audit Log)**: Every approval, rejection, or submission is indelibly recorded with timestamps and actor identities.
 
-## Nodes
+### Analytics (`statistics.php`)
+- **Dashboard**:
+  - **Volume Metrics**: Total Documents & Total Budget Requested.
+  - **Department Analysis**: Pie chart showing request distribution by department.
+  - **Status Breakdown**: Doughnut chart showing the success rate of workflows.
 
-| Node Type | Category | Inputs | Outputs | Widgets | Description |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Start Flow** | Start-End | - | `start` | - | Entry point of the workflow. Only one allowed per flow. |
-| **Officer Review** | Human | `INPUT` | `PASSED`<br>`REJECTED` | `Review` (Position)<br>`remark` (Text) | Assigns a review task to a specific position. |
-| **Manager Approval** | Human | `INPUT` | `APPROVED`<br>`DENIED` | `level` (Role)<br>`threshold` (Number) | Assigns an approval task based on management level and value threshold. |
-| **Condition** | Logic | `EXEC`<br>`DATA` | `TRUE`<br>`FALSE` | `field` (Select)<br>`operator` (Select)<br>`value` (Text) | Logic branch based on data comparison (e.g., Amount > 1000). |
-| **System Action** | System | `EXEC`<br>`DATA` | `DONE` | `action` (Select)<br>`recipient` (Text) | Automated system tasks like sending emails or updating databases. |
-| **End Flow** | Start-End | `INPUT` | - | `status` (Select) | Terminal point. Sets the final status of the workflow instance. |
+### User System
+- **Registration**: Extended fields (Employee ID, Position, Department).
+- **Authentication**: Secure login with role-based attributes.
 
-## API Documentation
+## API Documentation (Router & Controllers)
 
-The backend `api.php` handles all requests via query parameter `action`.
+The backend has been refactored into an MVC-style router pattern. `api.php` acts as the central router, delegating requests to specific controllers based on the `action` query parameter.
 
-### Authentication
-- **`POST ?action=login`**: Authenticate user. Body: `{ "username": "...", "password": "..." }`
-- **`POST ?action=register`**: Create new user. Body: `{ "emp_id": "...", "username": "...", "password": "...", "email": "...", "position_id": "...", "dept_id": "..." }`
-- **`POST ?action=logout`**: Destroy session.
-- **`GET ?action=check_auth`**: Check session status. Returns `{ "authenticated": true/false, "username": "..." }`
+### Controllers
+- **`AuthController.php`**: Handles `login`, `register`, `logout`, `check_auth`.
+- **`WorkflowController.php`**: Handles `list`, `load`, `save`, `run`.
+- **`DocumentController.php`**: Handles `start_document`, `track_documents`, `upload`, `get_inbox`, `process_document`, `get_document_history`.
+- **`UserController.php`**: Handles `get_users`, `get_meta_data`, `save_delegation`, `get_my_delegations`, `revoke_delegation`.
+- **`AnalyticsController.php`**: Handles `get_tracker_stats`, `get_statistics`.
 
-### Workflow Operations
-- **`GET ?action=list`**: Get all saved workflows with metadata.
-- **`GET ?action=load&file=[name]`**: Get specific workflow JSON and metadata.
-- **`POST ?action=save&name=[name]&description=[desc]`**: Save workflow. Body: JSON String.
-- **`POST ?action=run`**: Execute workflow. Body: `{ "workflow_json": {...}, "name": "..." }`
-- **`POST ?action=upload`**: Upload file for widgets.
+*(Note: The underlying query parameters remain the same for backward compatibility with the frontend interfaces.)*
 
-### Document Operations
-- **`POST ?action=start_document`**: Create a new document instance.
-  - Params: `title`, `amount`, `dept_id`, `workflow_id`.
-  - Files: `files[]` (Multipart).
-  - Returns: `{ "success": true, "doc_id": "...", "doc_no": "..." }`
-- **`GET ?action=get_user_details`**: Fetch current session user's details (Username, Position, Department).
+## Project Structure
 
-### Metadata
-- **`GET ?action=get_meta_data`**: Returns available `positions` and `departments` for registration.
+- **`controllers/`**: Domain-specific logic (`AuthController.php`, etc.).
+- **`flowBilder.php`**: Main visual editor.
+- **`docFlow.php`**: Document creation interface.
+- **`tracker.php`**: User document & delegation dashboard.
+- **`inbox.php`**: User pending approvals inbox.
+- **`statistics.php`**: Analytics dashboard.
+- **`review.php`**: Workflow stepper view.
+- **`app.js`**: Core logic for the editor.
+- **`api.php`**: Central API router.
+- **`WorkflowEngine.php`**: Backend execution logic.
+- **`database/`**: SQLite database storage.
+
+## Performance Optimizations
+
+1. **Singleton Database Connection**: `getDB()` utilizes the Singleton pattern to reuse the PDO instance per request, drastically reducing connection overhead.
+2. **Lazy Loading Controllers**: The `spl_autoload_register` function is used so PHP only includes controller files into memory when they are actually instantiated by the router.
+3. **OPcache Array Flow Cache**: Workflow JSON definitions are pre-compiled into native `.php` array files (`storage/array_cache/`) so they bypass file reading constraints and load directly into server memory.
+4. **Optimized Inbox Queries**: Document retrieval eliminates the N+1 problem by leveraging `UNION ALL` to build dynamic delegation profiles in one sweep.
+5. **Debounced Graph Rendering**: The Node Editor (`app.js`) implements `requestAnimationFrame` to limit calculation intervals, preserving FPS smoothing when dragging nodes in large flowcharts.
 
 ## Data Dictionary
 
@@ -105,16 +115,38 @@ The backend `api.php` handles all requests via query parameter `action`.
 ### `documents`
 | Field | Type | Attributes | Description |
 | :--- | :--- | :--- | :--- |
-| `id` | INT | PK, AI | Internal ID. |
-| `doc_no` | TEXT | UNIQUE | Format: YYYYMMDDxxxx. |
-| `title` | TEXT | | Document Title. |
-| `amount` | DECIMAL | | Budget/Amount. |
+| `doc_id` | TEXT | PK | Format: DOC-xxxx. |
+| `doc_number` | TEXT | UNIQUE | Internal Running Number Format: YYYYMMDDxxxx. |
+| `doc_title` | TEXT | | Document Title. |
+| `doc_amount` | DECIMAL | | Budget/Amount. |
 | `dept_id` | INT | FK | Origin Department. |
-| `requester_id` | INT | FK | User who created the doc. |
+| `user_id` | INT | FK | User who created the doc. |
 | `workflow_id` | INT | FK | ID of the Workflow Definition used. |
-| `current_node` | TEXT | | ID of the current active node. |
+| `current_node_id` | TEXT | | ID of the current active node. |
 | `status` | TEXT | | e.g., START, PENDING. |
 | `created_at` | DATETIME | | Creation Timestamp. |
+
+### `workflow_logs`
+| Field | Type | Attributes | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | INT | PK, AI | Log ID. |
+| `document_id` | TEXT | FK | Linked Document ID. |
+| `actor_id` | TEXT | FK | User who performed the action. |
+| `node_id` | TEXT | | Node where action occurred. |
+| `action` | TEXT | | Action taken (e.g., APPROVED). |
+| `comment` | TEXT | | Optional remarks. |
+| `created_at`| DATETIME | | Timestamp of the action. |
+
+### `delegations`
+| Field | Type | Attributes | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | INT | PK, AI | Delegation Process ID. |
+| `delegator_id`| TEXT | FK | User giving the authority. |
+| `delegatee_id`| TEXT | FK | User receiving the authority. |
+| `start_date` | DATETIME | | Start window of delegation. |
+| `end_date` | DATETIME | | End window of delegation. |
+| `status` | TEXT | | e.g. ACTIVE or REVOKED. |
+| `created_at`| DATETIME | | Creation Timestamp. |
 
 ### `document_files`
 | Field | Type | Attributes | Description |
@@ -152,15 +184,3 @@ The workflow is saved as a JSON object containing nodes and connections.
   ]
 }
 ```
-
-## Project Structure
-
-- **`flowBilder.php`**: Main application interface.
-- **`review.php`**: Read-only view for reviewing saved workflows.
-- **`docFlow.php`**: Interface for initiating new document workflows.
-- **`tracker.php`**: Page for tracking submitted document status.
-- **`app.js`**: Core logic for the editor, node management, and API calls.
-- **`api.php`**: Backend API for Auth, Workflow CRUD, and Execution.
-- **`WorkflowEngine.php`**: Class responsible for executing workflow logic.
-- **`database/`**: SQLite database storage.
-- **`setup_extended_db.php`**: Script to initialize the extended database schema (Positions, Departments).

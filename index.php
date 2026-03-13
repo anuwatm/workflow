@@ -254,7 +254,7 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    window.location.href = 'flowBilder.php';
+                    window.location.href = 'tracker.php';
                 } else {
                     errorDiv.textContent = data.error || 'Login failed';
                     errorDiv.style.display = 'block';

@@ -190,32 +190,42 @@ class App {
             }
         });
 
+        // Throttle control variables
+        let isRAFScheduled = false;
+
         window.addEventListener('mousemove', (e) => {
-            if (this.isPanning) {
-                const dx = e.clientX - this.dragStartX;
-                const dy = e.clientY - this.dragStartY;
-                this.panX = this.initialPanX + dx;
-                this.panY = this.initialPanY + dy;
-                this.updateTransform();
-            }
+            if (isRAFScheduled) return;
 
-            if (this.draggedNode) {
-                const dx = (e.clientX - this.dragStartX) / this.scale;
-                const dy = (e.clientY - this.dragStartY) / this.scale;
-                this.draggedNode.x = this.draggedNode.initialX + dx;
-                this.draggedNode.y = this.draggedNode.initialY + dy;
-                this.draggedNode.updateElementPosition();
-                this.updateConnections();
-            }
+            isRAFScheduled = true;
+            requestAnimationFrame(() => {
+                isRAFScheduled = false;
 
-            if (this.draggedConnection) {
-                /* Corrected logic for mouse tracking in transformed space */
-                const rect = this.canvas.getBoundingClientRect();
-                const mouseX = (e.clientX - rect.left - this.panX) / this.scale;
-                const mouseY = (e.clientY - rect.top - this.panY) / this.scale;
+                if (this.isPanning) {
+                    const dx = e.clientX - this.dragStartX;
+                    const dy = e.clientY - this.dragStartY;
+                    this.panX = this.initialPanX + dx;
+                    this.panY = this.initialPanY + dy;
+                    this.updateTransform();
+                }
 
-                this.updateTempConnection(mouseX, mouseY);
-            }
+                if (this.draggedNode) {
+                    const dx = (e.clientX - this.dragStartX) / this.scale;
+                    const dy = (e.clientY - this.dragStartY) / this.scale;
+                    this.draggedNode.x = this.draggedNode.initialX + dx;
+                    this.draggedNode.y = this.draggedNode.initialY + dy;
+                    this.draggedNode.updateElementPosition();
+                    this.updateConnections();
+                }
+
+                if (this.draggedConnection) {
+                    /* Corrected logic for mouse tracking in transformed space */
+                    const rect = this.canvas.getBoundingClientRect();
+                    const mouseX = (e.clientX - rect.left - this.panX) / this.scale;
+                    const mouseY = (e.clientY - rect.top - this.panY) / this.scale;
+
+                    this.updateTempConnection(mouseX, mouseY);
+                }
+            });
         });
 
         window.addEventListener('mouseup', (e) => {

@@ -2,454 +2,117 @@
 session_start();
 header('Content-Type: application/json');
 
-function getDB()
-{
-    $dbPath = 'c:/LocalDevine/www/workflow/database/workflow.sqlite';
-    if (!file_exists($dbPath)) {
-        http_response_code(500);
-        die(json_encode(['error' => 'Database not found. Please run init_db.php first.']));
+function sanitizeAndValidateFile($filename) {
+    $allowedExtensions = ['pdf', 'png', 'jpg', 'jpeg', 'docx', 'xlsx', 'ppt', 'pptx', 'doc', 'xls'];
+    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    
+    if (!in_array($ext, $allowedExtensions)) {
+        return false;
     }
-    try {
-        $pdo = new PDO("sqlite:$dbPath");
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        return $pdo;
-    } catch (PDOException $e) {
-        http_response_code(500);
-        die(json_encode(['error' => 'Database connection failed: ' . $e->getMessage()]));
+    
+    $basename = pathinfo($filename, PATHINFO_FILENAME);
+    // Remove special characters, keep alphanumeric, dash, underscore
+    $safeBasename = preg_replace('/[^a-zA-Z0-9_-]/', '', $basename);
+    
+    if (empty($safeBasename)) {
+        $safeBasename = 'file_' . time();
     }
+    
+    return $safeBasename . '.' . $ext;
+}
+function getDB() {
+    static $pdo = null;
+
+    if ($pdo === null) {
+        $dbPath = 'c:/LocalDevine/www/workflow/database/workflow.sqlite';
+        if (!file_exists($dbPath)) {
+            http_response_code(500);
+            die(json_encode(['error' => 'Database not found. Please run init_db.php first.']));
+        }
+        try {
+            $pdo = new PDO("sqlite:$dbPath");
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        } catch (PDOException $e) {
+            http_response_code(500);
+            die(json_encode(['error' => 'Database connection failed: ' . $e->getMessage()]));
+        }
+    }
+    
+    return $pdo;
 }
 
+// Autoload Controllers
+spl_autoload_register(function ($class_name) {
+    if (strpos($class_name, 'Controller') !== false) {
+        require_once __DIR__ . '/controllers/' . $class_name . '.php';
+    }
+});
+
 $action = $_GET['action'] ?? '';
-
-
-if ($action === 'register') {
-    $data = json_decode(file_get_contents('php://input'), true);
-    $empId = $data['emp_id'] ?? '';
-    $username = $data['username'] ?? '';
-    $password = $data['password'] ?? '';
-    $email = $data['email'] ?? '';
-    $positionId = $data['position_id'] ?? null;
-    $deptId = $data['dept_id'] ?? null;
-
-    if (empty($empId) || empty($username) || empty($password) || empty($email)) {
-        echo json_encode(['success' => false, 'error' => 'All fields are required']);
+try {
+    $pdo = getDB();
+    
+    // Unauthenticated Endpoints 
+    if ($action === 'register') {
+        (new AuthController())->register($pdo);
+        exit;
+    } elseif ($action === 'login') {
+        (new AuthController())->login($pdo);
+        exit;
+    } elseif ($action === 'check_auth') {
+        (new AuthController())->check_auth();
+        exit;
+    } elseif ($action === 'get_meta_data') {
+        (new UserController())->get_meta_data($pdo);
         exit;
     }
 
-    try {
-        $pdo = getDB();
-
-        // Check if username or ID exists
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE username = :username OR id = :id");
-        $stmt->execute([':username' => $username, ':id' => $empId]);
-        if ($stmt->fetch()) {
-            echo json_encode(['success' => false, 'error' => 'Username or Emp ID already exists']);
-            exit;
-        }
-
-        // Hash password
-        $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-
-        // Insert user with new fields
-        $sql = "INSERT INTO users (id, username, email, password_hash, position_id, dept_id) 
-                VALUES (:id, :username, :email, :password, :pos, :dept)";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([
-            ':id' => $empId,
-            ':username' => $username,
-            ':email' => $email,
-            ':password' => $hashedPassword,
-            ':pos' => $positionId,
-            ':dept' => $deptId
-        ]);
-
-        echo json_encode(['success' => true, 'message' => 'Registration successful']);
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
-    }
-
-} elseif ($action === 'get_meta_data') {
-    try {
-        $pdo = getDB();
-        $positions = $pdo->query("SELECT id, name FROM positions")->fetchAll(PDO::FETCH_ASSOC);
-        $departments = $pdo->query("SELECT id, name FROM departments")->fetchAll(PDO::FETCH_ASSOC);
-        echo json_encode(['positions' => $positions, 'departments' => $departments]);
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(['error' => $e->getMessage()]);
-    }
-} elseif ($action === 'login') {
-    $data = json_decode(file_get_contents('php://input'), true);
-    $username = $data['username'] ?? '';
-    $password = $data['password'] ?? '';
-
-    if (empty($username) || empty($password)) {
-        echo json_encode(['success' => false, 'error' => 'Username and password are required']);
-        exit;
-    }
-
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("SELECT id, username, password_hash FROM users WHERE username = :username");
-        $stmt->execute([':username' => $username]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($user && password_verify($password, $user['password_hash'])) {
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['username'];
-            echo json_encode(['success' => true, 'message' => 'Login successful']);
-        } else {
-            echo json_encode(['success' => false, 'error' => 'Invalid username or password']);
-        }
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
-    }
-
-} elseif ($action === 'logout') {
-    session_destroy();
-    echo json_encode(['success' => true, 'message' => 'Logged out']);
-
-} elseif ($action === 'check_auth') {
-    if (isset($_SESSION['user_id'])) {
-        echo json_encode(['authenticated' => true, 'username' => $_SESSION['username']]);
-    } else {
-        echo json_encode(['authenticated' => false]);
-    }
-
-} elseif ($action === 'save') {
+    // Require Authentication for the rest
     if (!isset($_SESSION['user_id'])) {
         http_response_code(403);
         echo json_encode(['error' => 'Unauthorized']);
         exit;
     }
+    
+    $userId = $_SESSION['user_id'];
+    $username = $_SESSION['username'] ?? '';
 
-    $data = file_get_contents('php://input'); // This acts as structure_json
-    $currentName = 'Untitled Workflow';
-    $description = $_GET['description'] ?? '';
+    // Route Authenticated Actions
+    switch ($action) {
+        // Auth Controller
+        case 'logout': (new AuthController())->logout(); break;
+        
+        // User Controller
+        case 'get_user_details': (new UserController())->get_user_details($pdo, $userId); break;
+        case 'get_users': (new UserController())->get_users($pdo); break;
+        case 'save_delegation': (new UserController())->save_delegation($pdo, $userId); break;
+        case 'get_my_delegations': (new UserController())->get_my_delegations($pdo, $userId); break;
+        case 'revoke_delegation': (new UserController())->revoke_delegation($pdo, $userId); break;
 
-    if (isset($_GET['name'])) {
-        $currentName = preg_replace('/[^a-zA-Z0-9_\- ]/', '', $_GET['name']);
-    }
+        // Workflow Controller
+        case 'save': (new WorkflowController())->save($pdo, $username); break;
+        case 'list': (new WorkflowController())->list($pdo); break;
+        case 'load': (new WorkflowController())->load($pdo); break;
+        case 'run': (new WorkflowController())->run($pdo); break;
 
-    // Generate a safe filename for storage
-    $safeFilename = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $currentName) . '.json';
-    $storagePath = __DIR__ . '/storage/' . $safeFilename;
+        // Document Controller
+        case 'upload': (new DocumentController())->upload(); break;
+        case 'start_document': (new DocumentController())->start_document($pdo, $userId); break;
+        case 'track_documents': (new DocumentController())->track_documents($pdo, $userId); break;
+        case 'get_inbox': (new DocumentController())->get_inbox($pdo, $userId); break;
+        case 'process_document': (new DocumentController())->process_document($pdo, $userId); break;
+        case 'get_document_history': (new DocumentController())->get_document_history($pdo); break;
 
-    try {
-        // 1. Save JSON to file
-        if (file_put_contents($storagePath, $data) === false) {
-            throw new Exception("Failed to write to storage file: $safeFilename");
-        }
+        // Analytics Controller
+        case 'get_tracker_stats': (new AnalyticsController())->get_tracker_stats($pdo, $userId); break;
+        case 'get_statistics': (new AnalyticsController())->get_statistics($pdo); break;
 
-        $pdo = getDB();
-
-        // 2. Update Database
-        // Check if workflow with name exists
-        $stmt = $pdo->prepare("SELECT id FROM workflow_definitions WHERE name = :name");
-        $stmt->execute([':name' => $currentName]);
-        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($existing) {
-            // Update existing record
-            $stmt = $pdo->prepare("UPDATE workflow_definitions SET workflow_file = :filename, description = :desc, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
-            $stmt->execute([':filename' => $safeFilename, ':desc' => $description, ':id' => $existing['id']]);
-            echo json_encode(['success' => true, 'message' => 'Workflow updated', 'id' => $existing['id'], 'filename' => $currentName]);
-        } else {
-            // Insert new record
-            $stmt = $pdo->prepare("INSERT INTO workflow_definitions (name, description, workflow_file, creator_name) VALUES (:name, :desc, :filename, :creator)");
-            $stmt->execute([
-                ':name' => $currentName,
-                ':desc' => $description,
-                ':filename' => $safeFilename,
-                ':creator' => $_SESSION['username']
-            ]);
-            echo json_encode(['success' => true, 'message' => 'Workflow created', 'id' => $pdo->lastInsertId(), 'filename' => $currentName]);
-        }
-
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'e: ' . $e->getMessage()]);
-    }
-
-} elseif ($action === 'list') {
-    if (!isset($_SESSION['user_id'])) {
-        http_response_code(403);
-        echo json_encode(['error' => 'Unauthorized']);
-        exit;
-    }
-
-    try {
-        $pdo = getDB();
-        // Return detailed list
-        $stmt = $pdo->query("SELECT id, name, description, creator_name, created_at, updated_at, workflow_file FROM workflow_definitions ORDER BY updated_at DESC");
-        $workflows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        echo json_encode(['files' => $workflows]);
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(['error' => $e->getMessage()]);
-    }
-
-} elseif ($action === 'load') {
-    if (!isset($_SESSION['user_id'])) {
-        http_response_code(403);
-        echo json_encode(['error' => 'Unauthorized']);
-        exit;
-    }
-
-    $name = $_GET['file'] ?? '';
-
-    try {
-        $pdo = getDB();
-        // Get the filename from DB
-        $stmt = $pdo->prepare("SELECT workflow_file, description, name FROM workflow_definitions WHERE name = :name");
-        $stmt->execute([':name' => $name]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($row) {
-            $filename = $row['workflow_file'];
-            $filePath = __DIR__ . '/storage/' . $filename;
-
-            if (is_file($filePath)) {
-                $content = file_get_contents($filePath);
-                $jsonContent = json_decode($content);
-                // Return wrapped response
-                echo json_encode([
-                    'meta' => [
-                        'name' => $row['name'],
-                        'description' => $row['description']
-                    ],
-                    'content' => $jsonContent
-                ]);
-            } else {
-                // Fallback if file missing but DB says it's there?
-                $json = json_decode($filename);
-                if ($json && json_last_error() == JSON_ERROR_NONE) {
-                    echo $filename;
-                } else {
-                    http_response_code(404);
-                    echo json_encode(['success' => false, 'error' => 'Storage file not found']);
-                }
-            }
-        } else {
+        default:
             http_response_code(404);
-            echo json_encode(['success' => false, 'error' => 'Workflow not found']);
-        }
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            echo json_encode(['error' => 'Invalid action']);
+            break;
     }
-
-} elseif ($action === 'upload') {
-    if (!isset($_SESSION['user_id'])) {
-        http_response_code(403);
-        echo json_encode(['error' => 'Unauthorized']);
-        exit;
-    }
-
-    if (isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = __DIR__ . '/docFlow';
-        if (!file_exists($uploadDir)) {
-            mkdir($uploadDir, 0777, true);
-        }
-
-        $fileName = basename($_FILES['file']['name']);
-        $fileName = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $fileName);
-        $targetPath = $uploadDir . '/' . $fileName;
-
-        if (move_uploaded_file($_FILES['file']['tmp_name'], $targetPath)) {
-            echo json_encode(['success' => true, 'filename' => $fileName]);
-        } else {
-            http_response_code(500);
-            echo json_encode(['success' => false, 'error' => 'Failed to move uploaded file']);
-        }
-    } else {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'error' => 'No file uploaded or upload error']);
-    }
-} elseif ($action === 'run') {
-    if (!isset($_SESSION['user_id'])) {
-        http_response_code(403);
-        echo json_encode(['error' => 'Unauthorized']);
-        exit;
-    }
-
-    $data = json_decode(file_get_contents('php://input'), true);
-    if (!isset($data['workflow_json'])) {
-        echo json_encode(['success' => false, 'error' => 'No workflow data provided']);
-        exit;
-    }
-
-    $json = $data['workflow_json'];
-    $workflowName = $data['name'] ?? 'Untitled Execution';
-
-    try {
-        require_once 'WorkflowEngine.php';
-        $pdo = getDB();
-
-        // Create Instance Record
-        $stmt = $pdo->prepare("INSERT INTO workflow_instances (workflow_name, status, data) VALUES (?, 'PENDING', ?)");
-        $stmt->execute([$workflowName, $json]);
-        $instanceId = $pdo->lastInsertId();
-
-        // Execution
-        $engine = new WorkflowEngine($pdo, $instanceId);
-        $engine->start($json);
-
-        echo json_encode(['success' => true, 'message' => 'Workflow executed successfully', 'instance_id' => $instanceId]);
-
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Execution Error: ' . $e->getMessage()]);
-    }
-
-} elseif ($action === 'get_user_details') {
-    if (!isset($_SESSION['user_id'])) {
-        http_response_code(403);
-        echo json_encode(['error' => 'Unauthorized']);
-        exit;
-    }
-
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("
-            SELECT u.username, p.name as position, d.name as department 
-            FROM users u
-            LEFT JOIN positions p ON u.position_id = p.id
-            LEFT JOIN departments d ON u.dept_id = d.id
-            WHERE u.id = ?
-        ");
-        $stmt->execute([$_SESSION['user_id']]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($user) {
-            echo json_encode(['success' => true, 'username' => $user['username'], 'position' => $user['position'], 'department' => $user['department']]);
-        } else {
-            echo json_encode(['success' => false, 'error' => 'User details not found']);
-        }
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-    }
-
-} elseif ($action === 'start_document') {
-    if (!isset($_SESSION['user_id'])) {
-        http_response_code(403);
-        echo json_encode(['error' => 'Unauthorized']);
-        exit;
-    }
-
-    // Handle Multipart Form Data
-    $title = $_POST['title'] ?? '';
-    $amount = $_POST['amount'] ?? 0;
-    $deptId = $_POST['dept_id'] ?? null;
-    $workflowId = $_POST['workflow_id'] ?? null;
-
-    if (empty($title) || empty($amount) || empty($deptId) || empty($workflowId)) {
-        echo json_encode(['success' => false, 'error' => 'Missing required fields']);
-        exit;
-    }
-
-    try {
-        $pdo = getDB();
-
-        // 1. Generate Doc No
-        $datePrefix = date('Ymd');
-        $stmt = $pdo->prepare("SELECT doc_no FROM documents WHERE dateprefix = ? ORDER BY id DESC LIMIT 1");
-        $stmt->execute([$datePrefix]);
-        $lastDoc = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        $runningNo = 1;
-        if ($lastDoc) {
-            // Extract running number (last 4 digits)
-            $lastRunning = (int) substr($lastDoc['doc_no'], -4);
-            $runningNo = $lastRunning + 1;
-        }
-        $docNo = $datePrefix . str_pad($runningNo, 4, '0', STR_PAD_LEFT);
-
-        // 2. Parse Workflow for Next Node
-        // Get Workflow File
-        $stmt = $pdo->prepare("SELECT workflow_file FROM workflow_definitions WHERE id = ?");
-        $stmt->execute([$workflowId]);
-        $wfDef = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        $nextNodeId = 'Unknown';
-        $status = 'START';
-
-        if ($wfDef) {
-            $filePath = __DIR__ . '/storage/' . $wfDef['workflow_file'];
-            if (file_exists($filePath)) {
-                $json = json_decode(file_get_contents($filePath), true);
-                // Find Start Node
-                $nodes = $json['nodes'] ?? [];
-                $connections = $json['connections'] ?? [];
-
-                $startNode = null;
-                foreach ($nodes as $n) {
-                    if ($n['type'] === 'StartFlow') {
-                        $startNode = $n;
-                        break;
-                    }
-                }
-
-                if ($startNode) {
-                    // Find Connection from Start
-                    foreach ($connections as $c) {
-                        if ($c['output_node_id'] === $startNode['id']) {
-                            $nextNodeId = $c['input_node_id'];
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Insert Document
-        $stmt = $pdo->prepare("INSERT INTO documents (doc_no, title, amount, dept_id, requester_id, workflow_id, current_node, status, dateprefix) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$docNo, $title, $amount, $deptId, $_SESSION['user_id'], $workflowId, $nextNodeId, $status, $datePrefix]);
-        $docId = $pdo->lastInsertId();
-
-        // 4. Handle Files
-        if (isset($_FILES['files'])) {
-            // Create Folder specific to Document ID
-            $docDir = __DIR__ . '/docFlow/' . $docNo . '/';
-            if (!file_exists($docDir)) {
-                if (!mkdir($docDir, 0777, true)) {
-                    throw new Exception("Failed to create document directory: $docNo");
-                }
-            }
-
-            // Standardize $_FILES Structure
-            $files = $_FILES['files'];
-            // Loop through files
-            if (is_array($files['name'])) {
-                $count = count($files['name']);
-                for ($i = 0; $i < $count; $i++) {
-                    if ($files['error'][$i] === UPLOAD_ERR_OK) {
-                        $tmpName = $files['tmp_name'][$i];
-                        $origName = basename($files['name'][$i]);
-                        $safeName = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $origName);
-                        $target = $docDir . $safeName;
-
-                        if (move_uploaded_file($tmpName, $target)) {
-                            // Store relative path (e.g., 202602110001/my_file.pdf)
-                            $relativePath = $docNo . '/' . $safeName;
-                            $stmt = $pdo->prepare("INSERT INTO document_files (document_id, filename, file_path) VALUES (?, ?, ?)");
-                            $stmt->execute([$docId, $origName, $relativePath]);
-                        }
-                    }
-                }
-            }
-        }
-
-        echo json_encode(['success' => true, 'doc_id' => $docId, 'doc_no' => $docNo]);
-
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-    }
-} else {
-    echo json_encode(['error' => 'Invalid action']);
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['success' => false, 'error' => 'System Router Error: ' . $e->getMessage()]);
 }

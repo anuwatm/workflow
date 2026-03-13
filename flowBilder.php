@@ -87,13 +87,15 @@ if (!isset($_SESSION['user_id'])) {
             </div>
             <div id="main-menu" class="floating-panel">
                 <div class="menu-buttons">
-                    <button id="btn-logout" style="background:#dc3545;color:white;">Logout</button>
+                    <button id="btn-logout" style="background:#dc3545;color:white;" onclick="location.href='index.php'">Logout</button>
+                    <button id="btn-dashboard" style="background:#28a745;color:white;" onclick="location.href='tracker.php'">Dashboard</button>
+                    <button id="btn-inbox" style="background:#007bff;color:white;" onclick="location.href='inbox.php'">Inbox</button>
+                    <div style="width: 100%; border-bottom: 1px solid #444; margin: 5px 0;"></div>
                     <button id="btn-run" style="background:#17a2b8;color:white;">Run Workflow</button>
                     <button id="btn-start-flow">Reset Flow</button>
                     <button id="btn-save">Save Workflow</button>
                     <button id="btn-load">Load Workflow</button>
-                    <button id="btn-review" style="background:#6f42c1;color:white;"
-                        onclick="location.href='review.php'">Review Workflow</button>
+                    <button id="btn-review" style="background:#6f42c1;color:white;" onclick="location.href='review.php'">Review</button>
                     <button id="btn-clear">Clear</button>
                 </div>
                 <div id="workflow-info-panel" class="workflow-info-panel" style="display:none;">
